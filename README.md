@@ -11,6 +11,119 @@ AppDomain Injection is a technique that allows execution of arbitrary .NET code 
 
 **Payload:** Benign (spawns `calc.exe`) for safe Purple Team testing.
 
+## How It Works
+
+### Technique 1: Config File Hijack
+
+```mermaid
+flowchart LR
+    subgraph ATTACKER ["Attacker Actions"]
+        A1[Copy powershell.exe\nto TEMP folder]
+        A2[Create\npowershell.exe.config]
+        A3[Place Payload.dll\nin same folder]
+    end
+
+    subgraph STAGING ["Staging Directory"]
+        S1[powershell.exe]
+        S2[powershell.exe.config]
+        S3[Payload.dll]
+    end
+
+    subgraph EXECUTION ["Execution Flow"]
+        E1[Execute staged\npowershell.exe]
+        E2[CLR reads\n.config file]
+        E3[CLR loads\nAppDomainManager]
+        E4[Payload.Injector\nexecutes]
+        E5[calc.exe\nspawns]
+    end
+
+    A1 --> S1
+    A2 --> S2
+    A3 --> S3
+    S1 --> E1
+    E1 --> E2
+    E2 --> E3
+    E3 --> E4
+    E4 --> E5
+
+    style E5 fill:#90EE90
+    style S2 fill:#FFB6C1
+    style S3 fill:#FFB6C1
+```
+
+**Config file content:**
+```xml
+<configuration>
+  <runtime>
+    <appDomainManagerAssembly value="Payload, Version=1.0.0.0, ..." />
+    <appDomainManagerType value="Payload.Injector" />
+  </runtime>
+</configuration>
+```
+
+### Technique 2: Environment Variable Hijack
+
+```mermaid
+flowchart LR
+    subgraph ATTACKER ["Attacker Actions"]
+        A1[Copy target binary\nto TEMP folder]
+        A2[Place Payload.dll\nin same folder]
+        A3[Set environment\nvariables]
+    end
+
+    subgraph ENVVARS ["Environment Variables"]
+        V1["APPDOMAIN_MANAGER_ASM\n= Payload, Version=1.0.0.0..."]
+        V2["APPDOMAIN_MANAGER_TYPE\n= Payload.Injector"]
+        V3["COMPLUS_Version\n= v4.0.30319"]
+    end
+
+    subgraph EXECUTION ["Execution Flow"]
+        E1[Execute .NET\nprocess]
+        E2[CLR reads\nenv variables]
+        E3[CLR loads\nAppDomainManager]
+        E4[Payload.Injector\nexecutes]
+        E5[calc.exe\nspawns]
+    end
+
+    A1 --> E1
+    A2 --> E1
+    A3 --> V1
+    A3 --> V2
+    A3 --> V3
+    V1 --> E2
+    V2 --> E2
+    V3 --> E2
+    E1 --> E2
+    E2 --> E3
+    E3 --> E4
+    E4 --> E5
+
+    style E5 fill:#90EE90
+    style V1 fill:#FFB6C1
+    style V2 fill:#FFB6C1
+    style V3 fill:#FFB6C1
+```
+
+### Comparison
+
+```mermaid
+flowchart TB
+    subgraph CONFIG ["Config File Hijack"]
+        C1["Artifacts: .config + DLL"]
+        C2["Detection: File monitoring"]
+        C3["Stealth: Medium"]
+    end
+
+    subgraph ENVVAR ["Env Variable Hijack"]
+        E1["Artifacts: DLL only"]
+        E2["Detection: Process env capture"]
+        E3["Stealth: Higher"]
+    end
+
+    style C1 fill:#FFDAB9
+    style E1 fill:#FFDAB9
+```
+
 ## MITRE ATT&CK Mapping
 
 | Technique ID | Name | Description |
