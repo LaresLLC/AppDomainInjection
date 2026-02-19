@@ -2,12 +2,19 @@
 
 Purple Team tool for simulating AppDomain Injection techniques. Validates whether endpoint detection and response (EDR) solutions detect this TTP.
 
+## Demo
+
+https://github.com/user-attachments/assets/f0fcd36d-a657-485d-8332-29d19278fef6
+
 ## Overview
 
 AppDomain Injection is a technique that allows execution of arbitrary .NET code within the context of a legitimate Microsoft-signed process. This tool implements two variants:
 
 1. **Config File Hijack** - Abuses `.exe.config` files to load a malicious AppDomainManager
 2. **Environment Variable Hijack** - Uses `APPDOMAIN_MANAGER_*` environment variables
+
+
+
 
 **Payload:** Benign (spawns `calc.exe`) for safe Purple Team testing.
 
